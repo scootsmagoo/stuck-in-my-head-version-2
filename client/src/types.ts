@@ -1,3 +1,5 @@
+export type MatchSource = 'melody' | 'lyrics' | 'audio';
+
 export interface SongMatch {
   score: number;
   artist: string;
@@ -6,9 +8,12 @@ export interface SongMatch {
   artworkUrl: string | null;
   previewUrl: string | null;
   storeUrl: string | null;
+  sources?: MatchSource[];
+  alternateArtists?: string[];
 }
 
 export interface RecognizeResponse {
   matches?: SongMatch[];
+  heard?: string | null;
   error?: string;
 }

@@ -6,13 +6,15 @@ likelihood, with album art.
 
 ## How it works
 
-1. The browser records ~10–20 seconds of your voice with the MediaRecorder API.
-2. The recording is sent to the backend, which forwards it to
-   [AudD's humming recognition endpoint](https://docs.audd.io/) (`recognizeWithOffset`).
-   Melody matching works on pitch contour, so off-key singing and wrong lyrics
-   are fine — humming and whistling work too.
-3. Matches are enriched with album name, artwork, and a 30-second preview via
-   the iTunes Search API (no key required), then shown ranked by confidence.
+1. The browser records ~10–20 seconds of your voice and, in Chromium browsers,
+   live-captions any words you sing.
+2. The backend sends the recording to [AudD humming recognition](https://docs.audd.io/)
+   (`recognizeWithOffset`), and optionally to [ACRCloud](https://www.acrcloud.com/humming-recognition/)
+   if those keys are set.
+3. Sung words are searched against AudD's lyrics index.
+4. Candidates are collapsed by song title, boosted when melody and lyrics agree,
+   and rewritten to the canonical recording (popular original, not a karaoke
+   cover) via the iTunes Search API.
 
 ## Setup
 
@@ -26,25 +28,21 @@ npm run dev
 - Backend API: http://localhost:3001
 
 Get a free AudD API token at [dashboard.audd.io](https://dashboard.audd.io/) —
-300 free requests, no credit card. Without a token the app uses AudD's
-anonymous access (roughly 10 requests/day), which is enough to try it out.
+300 free requests, no credit card.
+
+Optional: add ACRCloud humming keys to `.env` from a humming-enabled project
+at [console.acrcloud.com](https://console.acrcloud.com/) (14-day trial).
 
 ## Tips for good matches
 
-- Hum the **chorus or hook** — the most recognizable part of the melody.
-- Give it **10+ seconds** of continuous melody.
-- Don't worry about key, lyrics, or vocal quality; steady rhythm matters most.
-- Coverage is best for popular songs; obscure tracks may not be in the
-  humming database.
+- Sing the **vocal chorus**, not a guitar riff — riffs usually aren't in humming databases.
+- Words help. Even messy lyrics let the app search a lyrics index.
+- Off-key is fine; keep a steady rhythm for 10+ seconds.
+- Coverage is best for popular songs.
 
 ## Project structure
 
 ```
 client/   React + Vite + TypeScript frontend (record UI, results screen)
-server/   Node + Express + TypeScript API (provider abstraction, enrichment)
+server/   Node + Express + TypeScript API (providers, ranking, enrichment)
 ```
-
-The backend exposes a plain REST endpoint (`POST /api/recognize`, multipart
-audio upload), so a future native mobile app can use the same server as-is.
-Recognition providers implement a small interface (`server/src/providers/`),
-so ACRCloud or another engine can be swapped in later.

@@ -1,4 +1,4 @@
-import type { SongMatch } from '../types';
+import type { MatchSource, SongMatch } from '../types';
 import { MusicNoteIcon } from './Icons';
 
 function Artwork({ url, title, large }: { url: string | null; title: string; large?: boolean }) {
@@ -13,6 +13,25 @@ function Artwork({ url, title, large }: { url: string | null; title: string; lar
   return <img className={className} src={url} alt={`Album cover for ${title}`} />;
 }
 
+const SOURCE_LABEL: Record<MatchSource, string> = {
+  melody: 'Melody',
+  lyrics: 'Lyrics',
+  audio: 'Recording',
+};
+
+function SourceTags({ sources }: { sources?: MatchSource[] }) {
+  if (!sources?.length) return null;
+  return (
+    <div className="source-tags">
+      {sources.map((s) => (
+        <span key={s} className="source-tag">
+          {SOURCE_LABEL[s]}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function TopMatch({ match }: { match: SongMatch }) {
   return (
     <div className="top-match">
@@ -21,6 +40,10 @@ function TopMatch({ match }: { match: SongMatch }) {
         <h2 className="song-title">{match.title}</h2>
         <p className="song-artist">{match.artist}</p>
         {match.album && <p className="song-album">{match.album}</p>}
+        {match.alternateArtists && match.alternateArtists.length > 0 && (
+          <p className="song-covers">Also recorded by {match.alternateArtists.join(', ')}</p>
+        )}
+        <SourceTags sources={match.sources} />
         <div className="confidence">
           <div className="confidence-bar">
             <div

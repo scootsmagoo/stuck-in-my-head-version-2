@@ -19,12 +19,13 @@ export default function App() {
   const [matches, setMatches] = useState<SongMatch[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleRecordingComplete = useCallback(async (blob: Blob) => {
+  const handleRecordingComplete = useCallback(async (blob: Blob, transcript: string) => {
     setPhase('processing');
     try {
       const wav = await blobToWav(blob);
       const form = new FormData();
       form.append('audio', wav, 'recording.wav');
+      if (transcript) form.append('lyrics', transcript);
       const res = await fetch('/api/recognize', { method: 'POST', body: form });
       const data = (await res.json()) as RecognizeResponse;
 
@@ -67,9 +68,11 @@ export default function App() {
                   <MicIcon size={44} />
                 </button>
                 <p className="hint">
-                  Tap the mic and hum the melody — the chorus works best.
+                  Tap the mic and sing or hum the <strong>vocal melody</strong> — usually the chorus.
                   <br />
-                  Off-key is fine. Wrong lyrics are fine. Give it 10+ seconds.
+                  Words help a lot if you know any. Guitar riffs usually won't match.
+                  <br />
+                  Off-key is fine. Give it 10+ seconds.
                 </p>
                 {recorder.error && <p className="error-text">{recorder.error}</p>}
               </>
@@ -87,6 +90,9 @@ export default function App() {
                   <span className="record-status">
                     {recorder.state === 'paused' ? 'Paused' : 'Listening…'}
                   </span>
+                  {recorder.transcript && (
+                    <p className="live-captions">“{recorder.transcript}”</p>
+                  )}
                 </div>
 
                 <div className="controls">
@@ -121,7 +127,7 @@ export default function App() {
         {phase === 'processing' && (
           <section className="processing">
             <div className="spinner" aria-hidden />
-            <p>Searching for your melody…</p>
+            <p>Searching melody and lyrics…</p>
           </section>
         )}
 
@@ -131,8 +137,9 @@ export default function App() {
           <section className="message-screen">
             <h2>No match found</h2>
             <p>
-              That melody didn't ring a bell. Try humming the chorus, keep a steady
-              rhythm, and record at least 10 seconds. Popular songs match best.
+              Try singing the chorus (words help), keep a steady rhythm, and record at
+              least 10 seconds. Humming a guitar riff usually won't match — the vocal
+              melody will.
             </p>
             <button className="button-secondary" onClick={reset}>
               Try again
@@ -152,7 +159,7 @@ export default function App() {
       </main>
 
       <footer className="footer">
-        Melody recognition by <a href="https://audd.io/" target="_blank" rel="noreferrer">AudD</a>
+        Melody + lyrics via <a href="https://audd.io/" target="_blank" rel="noreferrer">AudD</a>
         {' · '}Artwork via iTunes Search
       </footer>
     </div>

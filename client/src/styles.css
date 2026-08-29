@@ -290,6 +290,38 @@ body {
   font-size: 0.9rem;
 }
 
+.song-covers {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.source-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.source-tag {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  color: var(--text-dim);
+}
+
+.live-captions {
+  max-width: 28rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  font-style: italic;
+  opacity: 0.85;
+}
+
 .confidence {
   display: flex;
   align-items: center;

@@ -6,6 +6,20 @@ export interface RecognitionMatch {
   title: string;
 }
 
+export type MatchSource = 'melody' | 'lyrics' | 'audio';
+
+export interface RankedMatch {
+  score: number;
+  artist: string;
+  title: string;
+  album: string | null;
+  artworkUrl: string | null;
+  previewUrl: string | null;
+  storeUrl: string | null;
+  sources: MatchSource[];
+  alternateArtists: string[];
+}
+
 /**
  * Abstraction over melody/humming recognition services so the AudD
  * implementation can be swapped for ACRCloud (or others) without touching

@@ -1,6 +1,9 @@
+import { lyricsMentionQuery, normalizeKey } from '../lib/text.js';
 import type { RecognitionMatch, RecognitionProvider } from './types.js';
 
 const AUDD_HUMMING_URL = 'https://api.audd.io/recognizeWithOffset/';
+const AUDD_RECOGNIZE_URL = 'https://api.audd.io/';
+const AUDD_LYRICS_URL = 'https://api.audd.io/findLyrics/';
 
 interface AuddHummingResponse {
   status: 'success' | 'error';
@@ -17,32 +20,9 @@ export class AuddProvider implements RecognitionProvider {
   constructor(private readonly apiToken: string) {}
 
   async recognizeHumming(audio: Buffer, mimeType: string): Promise<RecognitionMatch[]> {
-    const form = new FormData();
-    form.append('api_token', this.apiToken);
-    // AudD needs a filename with a real extension to detect the container
-    // format; browser recordings arrive as webm/mp4/ogg depending on browser.
-    form.append(
-      'file',
-      new Blob([new Uint8Array(audio)], { type: mimeType }),
-      `recording.${extensionFor(mimeType)}`,
-    );
-
-    const res = await fetch(AUDD_HUMMING_URL, { method: 'POST', body: form });
-    if (!res.ok) {
-      throw new Error(`AudD request failed with HTTP ${res.status}`);
-    }
-
-    const data = (await res.json()) as AuddHummingResponse;
-    if (data.status === 'error') {
-      const { error_code, error_message } = data.error ?? {
-        error_code: -1,
-        error_message: 'unknown error',
-      };
-      throw new Error(`AudD error #${error_code}: ${error_message}`);
-    }
-
-    const list = data.result?.list ?? [];
-    return dedupe(list).sort((a, b) => b.score - a.score);
+    const data = await this.postFile<AuddHummingResponse>(AUDD_HUMMING_URL, audio, mimeType);
+    if (data.status === 'error') throw auddError(data.error);
+    return dedupe(data.result?.list ?? []).sort((a, b) => b.score - a.score);
   }
 
   /**
@@ -50,6 +30,51 @@ export class AuddProvider implements RecognitionProvider {
    * Used as a fallback when the user captured a song playing nearby.
    */
   async recognizeFingerprint(audio: Buffer, mimeType: string): Promise<RecognitionMatch[]> {
+    const data = await this.postFile<{
+      status: 'success' | 'error';
+      error?: { error_code: number; error_message: string };
+      result?: { artist?: string; title?: string } | null;
+    }>(AUDD_RECOGNIZE_URL, audio, mimeType, { return: 'apple_music,spotify' });
+
+    if (data.status === 'error') throw auddError(data.error);
+    const artist = data.result?.artist;
+    const title = data.result?.title;
+    if (!artist || !title) return [];
+    return [{ score: 100, artist, title }];
+  }
+
+  /** Search AudD's lyrics index by a sung excerpt (or title/artist text). */
+  async findLyrics(query: string): Promise<RecognitionMatch[]> {
+    const form = new FormData();
+    form.append('api_token', this.apiToken);
+    form.append('q', query);
+
+    const res = await fetch(AUDD_LYRICS_URL, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`AudD lyrics request failed with HTTP ${res.status}`);
+
+    const data = (await res.json()) as {
+      status: 'success' | 'error';
+      error?: { error_code: number; error_message: string };
+      result?: Array<{ artist?: string; title?: string; lyrics?: string }> | null;
+    };
+    if (data.status === 'error') throw auddError(data.error);
+
+    return dedupe(
+      (data.result ?? [])
+        .filter((r): r is { artist: string; title: string; lyrics?: string } =>
+          Boolean(r.artist && r.title),
+        )
+        .filter((r) => lyricsMentionQuery(query, r.title, r.lyrics))
+        .map((r) => ({ score: 0, artist: r.artist, title: r.title })),
+    );
+  }
+
+  private async postFile<T>(
+    url: string,
+    audio: Buffer,
+    mimeType: string,
+    extra: Record<string, string> = {},
+  ): Promise<T> {
     const form = new FormData();
     form.append('api_token', this.apiToken);
     form.append(
@@ -57,32 +82,17 @@ export class AuddProvider implements RecognitionProvider {
       new Blob([new Uint8Array(audio)], { type: mimeType }),
       `recording.${extensionFor(mimeType)}`,
     );
-    form.append('return', 'apple_music,spotify');
+    for (const [k, v] of Object.entries(extra)) form.append(k, v);
 
-    const res = await fetch('https://api.audd.io/', { method: 'POST', body: form });
-    if (!res.ok) {
-      throw new Error(`AudD request failed with HTTP ${res.status}`);
-    }
-
-    const data = (await res.json()) as {
-      status: 'success' | 'error';
-      error?: { error_code: number; error_message: string };
-      result?: { artist?: string; title?: string } | null;
-    };
-
-    if (data.status === 'error') {
-      const { error_code, error_message } = data.error ?? {
-        error_code: -1,
-        error_message: 'unknown error',
-      };
-      throw new Error(`AudD error #${error_code}: ${error_message}`);
-    }
-
-    const artist = data.result?.artist;
-    const title = data.result?.title;
-    if (!artist || !title) return [];
-    return [{ score: 100, artist, title }];
+    const res = await fetch(url, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`AudD request failed with HTTP ${res.status}`);
+    return (await res.json()) as T;
   }
+}
+
+function auddError(error?: { error_code: number; error_message: string }): Error {
+  const { error_code, error_message } = error ?? { error_code: -1, error_message: 'unknown error' };
+  return new Error(`AudD error #${error_code}: ${error_message}`);
 }
 
 function extensionFor(mimeType: string): string {
@@ -104,26 +114,12 @@ function extensionFor(mimeType: string): string {
   }
 }
 
-/**
- * AudD's humming DB often contains near-duplicate entries of the same song
- * (e.g. "Last Christmas" by "Taylor Swift" and "TAYLOR SWIFT"). Keep only the
- * highest-scoring entry per normalized artist+title.
- */
 function dedupe(matches: RecognitionMatch[]): RecognitionMatch[] {
   const seen = new Map<string, RecognitionMatch>();
   for (const m of matches) {
-    const key = `${normalize(m.artist)}|${normalize(m.title)}`;
+    const key = `${normalizeKey(m.artist)}|${normalizeKey(m.title)}`;
     const existing = seen.get(key);
-    if (!existing || m.score > existing.score) {
-      seen.set(key, m);
-    }
+    if (!existing || m.score > existing.score) seen.set(key, m);
   }
   return [...seen.values()];
-}
-
-function normalize(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/\(.*?\)|\[.*?\]/g, '')
-    .replace(/[^a-z0-9]/g, '');
 }
