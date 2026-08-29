@@ -54,9 +54,23 @@ app.post('/api/recognize', upload.single('audio'), async (req, res) => {
     res.json({ matches: enriched });
   } catch (err) {
     console.error('[server] recognition failed:', err);
-    res.status(502).json({
-      error: err instanceof Error ? err.message : 'Recognition failed.',
-    });
+    const message = err instanceof Error ? err.message : 'Recognition failed.';
+
+    // AudD's #300 fingerprinting error is what anonymous (token-less) access
+    // returns for hummed/sung input: without a registered token the request
+    // appears to fall back to regular fingerprinting, which can't process a
+    // hummed melody.
+    if (!apiToken && message.includes('#300')) {
+      res.status(502).json({
+        error:
+          'Humming recognition needs a (free) AudD API token — anonymous access ' +
+          'only supports matching original recordings, not hummed melodies. ' +
+          'Get a token at dashboard.audd.io and add it to .env as AUDD_API_TOKEN.',
+      });
+      return;
+    }
+
+    res.status(502).json({ error: message });
   }
 });
 

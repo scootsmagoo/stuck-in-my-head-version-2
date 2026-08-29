@@ -19,7 +19,13 @@ export class AuddProvider implements RecognitionProvider {
   async recognizeHumming(audio: Buffer, mimeType: string): Promise<RecognitionMatch[]> {
     const form = new FormData();
     form.append('api_token', this.apiToken);
-    form.append('file', new Blob([new Uint8Array(audio)], { type: mimeType }), 'recording');
+    // AudD needs a filename with a real extension to detect the container
+    // format; browser recordings arrive as webm/mp4/ogg depending on browser.
+    form.append(
+      'file',
+      new Blob([new Uint8Array(audio)], { type: mimeType }),
+      `recording.${extensionFor(mimeType)}`,
+    );
 
     const res = await fetch(AUDD_HUMMING_URL, { method: 'POST', body: form });
     if (!res.ok) {
@@ -37,6 +43,25 @@ export class AuddProvider implements RecognitionProvider {
 
     const list = data.result?.list ?? [];
     return dedupe(list).sort((a, b) => b.score - a.score);
+  }
+}
+
+function extensionFor(mimeType: string): string {
+  const subtype = mimeType.split('/')[1]?.split(';')[0] ?? '';
+  switch (subtype) {
+    case 'webm':
+      return 'webm';
+    case 'mp4':
+      return 'm4a';
+    case 'ogg':
+      return 'ogg';
+    case 'mpeg':
+      return 'mp3';
+    case 'wav':
+    case 'x-wav':
+      return 'wav';
+    default:
+      return 'webm';
   }
 }
 
