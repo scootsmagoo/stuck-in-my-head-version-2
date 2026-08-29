@@ -58,7 +58,10 @@ export function useRecorder({ maxSeconds, onComplete }: UseRecorderOptions) {
   const start = useCallback(async () => {
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Disable processing that can flatten a hummed melody into near-silence.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true },
+      });
       streamRef.current = stream;
       chunksRef.current = [];
       secondsRef.current = 0;

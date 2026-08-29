@@ -41,10 +41,19 @@ app.post('/api/recognize', upload.single('audio'), async (req, res) => {
   }
 
   try {
-    const matches = await provider.recognizeHumming(
-      req.file.buffer,
-      req.file.mimetype || 'audio/webm',
-    );
+    const mime = req.file.mimetype || 'audio/wav';
+    let matches = await tryHumming(req.file.buffer, mime);
+
+    // If humming couldn't extract a melody, try regular fingerprinting in
+    // case the user recorded a song playing from a speaker.
+    if (matches.length === 0) {
+      try {
+        matches = await provider.recognizeFingerprint(req.file.buffer, mime);
+      } catch (err) {
+        if (!isAuddFingerprintError(err)) throw err;
+        console.warn('[server] audio fingerprinting also failed:', err);
+      }
+    }
 
     const top = matches.slice(0, MAX_MATCHES);
     const enriched = await Promise.all(
@@ -54,26 +63,26 @@ app.post('/api/recognize', upload.single('audio'), async (req, res) => {
     res.json({ matches: enriched });
   } catch (err) {
     console.error('[server] recognition failed:', err);
-    const message = err instanceof Error ? err.message : 'Recognition failed.';
-
-    // AudD's #300 fingerprinting error is what anonymous (token-less) access
-    // returns for hummed/sung input: without a registered token the request
-    // appears to fall back to regular fingerprinting, which can't process a
-    // hummed melody.
-    if (!apiToken && message.includes('#300')) {
-      res.status(502).json({
-        error:
-          'Humming recognition needs a (free) AudD API token — anonymous access ' +
-          'only supports matching original recordings, not hummed melodies. ' +
-          'Get a token at dashboard.audd.io and add it to .env as AUDD_API_TOKEN.',
-      });
-      return;
-    }
-
-    res.status(502).json({ error: message });
+    res.status(502).json({
+      error: err instanceof Error ? err.message : 'Recognition failed.',
+    });
   }
 });
 
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
 });
+
+async function tryHumming(audio: Buffer, mime: string) {
+  try {
+    return await provider.recognizeHumming(audio, mime);
+  } catch (err) {
+    if (!isAuddFingerprintError(err)) throw err;
+    console.warn('[server] humming engine could not extract a melody; falling back');
+    return [];
+  }
+}
+
+function isAuddFingerprintError(err: unknown): boolean {
+  return err instanceof Error && /#300|#500/.test(err.message);
+}

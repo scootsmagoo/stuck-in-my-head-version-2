@@ -44,6 +44,45 @@ export class AuddProvider implements RecognitionProvider {
     const list = data.result?.list ?? [];
     return dedupe(list).sort((a, b) => b.score - a.score);
   }
+
+  /**
+   * Shazam-style fingerprinting of the original recording (not humming).
+   * Used as a fallback when the user captured a song playing nearby.
+   */
+  async recognizeFingerprint(audio: Buffer, mimeType: string): Promise<RecognitionMatch[]> {
+    const form = new FormData();
+    form.append('api_token', this.apiToken);
+    form.append(
+      'file',
+      new Blob([new Uint8Array(audio)], { type: mimeType }),
+      `recording.${extensionFor(mimeType)}`,
+    );
+    form.append('return', 'apple_music,spotify');
+
+    const res = await fetch('https://api.audd.io/', { method: 'POST', body: form });
+    if (!res.ok) {
+      throw new Error(`AudD request failed with HTTP ${res.status}`);
+    }
+
+    const data = (await res.json()) as {
+      status: 'success' | 'error';
+      error?: { error_code: number; error_message: string };
+      result?: { artist?: string; title?: string } | null;
+    };
+
+    if (data.status === 'error') {
+      const { error_code, error_message } = data.error ?? {
+        error_code: -1,
+        error_message: 'unknown error',
+      };
+      throw new Error(`AudD error #${error_code}: ${error_message}`);
+    }
+
+    const artist = data.result?.artist;
+    const title = data.result?.title;
+    if (!artist || !title) return [];
+    return [{ score: 100, artist, title }];
+  }
 }
 
 function extensionFor(mimeType: string): string {

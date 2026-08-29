@@ -1,11 +1,12 @@
 import { useCallback, useState } from 'react';
+import { blobToWav } from './audio/wav';
 import { MicIcon, PauseIcon, PlayIcon, StopIcon } from './components/Icons';
 import { Results } from './components/Results';
 import { useRecorder } from './hooks/useRecorder';
 import type { RecognizeResponse, SongMatch } from './types';
 
 const MAX_SECONDS = 20;
-const MIN_SECONDS = 4;
+const MIN_SECONDS = 8;
 
 type Phase = 'capture' | 'processing' | 'results' | 'no-match' | 'error';
 
@@ -21,8 +22,9 @@ export default function App() {
   const handleRecordingComplete = useCallback(async (blob: Blob) => {
     setPhase('processing');
     try {
+      const wav = await blobToWav(blob);
       const form = new FormData();
-      form.append('audio', blob, 'recording');
+      form.append('audio', wav, 'recording.wav');
       const res = await fetch('/api/recognize', { method: 'POST', body: form });
       const data = (await res.json()) as RecognizeResponse;
 
