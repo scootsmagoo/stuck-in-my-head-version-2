@@ -1,12 +1,20 @@
 import { useCallback, useState } from 'react';
+import { recognize } from '../../shared/recognize';
 import { blobToWav } from './audio/wav';
 import { MicIcon, PauseIcon, PlayIcon, StopIcon } from './components/Icons';
 import { Results } from './components/Results';
 import { useRecorder } from './hooks/useRecorder';
-import type { RecognizeResponse, SongMatch } from './types';
+import type { SongMatch } from './types';
 
 const MAX_SECONDS = 20;
 const MIN_SECONDS = 8;
+
+/**
+ * Optional AudD token, inlined at build time from a local .env. The deployed
+ * GitHub Pages build leaves it unset and falls back to AudD's anonymous tier,
+ * so no key is ever published.
+ */
+const AUDD_API_TOKEN = import.meta.env.VITE_AUDD_API_TOKEN as string | undefined;
 
 type Phase = 'capture' | 'processing' | 'results' | 'no-match' | 'error';
 
@@ -23,22 +31,15 @@ export default function App() {
     setPhase('processing');
     try {
       const wav = await blobToWav(blob);
-      const query = transcript ? `?lyrics=${encodeURIComponent(transcript)}` : '';
-      const res = await fetch(`/api/recognize${query}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'audio/wav' },
-        body: wav,
-      });
-      const data = (await res.json()) as RecognizeResponse;
+      // Recognition runs entirely in the browser so the app can be served as
+      // static files; AudD and iTunes both allow cross-origin requests.
+      const { matches } = await recognize(wav, transcript, { apiToken: AUDD_API_TOKEN });
 
-      if (!res.ok) {
-        throw new Error(data.error || `Request failed (HTTP ${res.status})`);
-      }
-      if (!data.matches || data.matches.length === 0) {
+      if (matches.length === 0) {
         setPhase('no-match');
         return;
       }
-      setMatches(data.matches);
+      setMatches(matches);
       setPhase('results');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Something went wrong.');

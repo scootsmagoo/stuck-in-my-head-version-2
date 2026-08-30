@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import type { RecognitionMatch, RecognitionProvider } from './types.js';
+import type { RecognitionMatch, RecognitionProvider } from '../../../shared/types.js';
 
 interface AcrHummingHit {
   score?: string | number;
@@ -28,7 +28,7 @@ export class AcrCloudProvider implements RecognitionProvider {
     private readonly accessSecret: string,
   ) {}
 
-  async recognizeHumming(audio: Buffer, mimeType: string): Promise<RecognitionMatch[]> {
+  async recognizeHumming(audio: Blob): Promise<RecognitionMatch[]> {
     const host = this.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const timestamp = String(Math.floor(Date.now() / 1000));
     const dataType = 'audio';
@@ -37,8 +37,8 @@ export class AcrCloudProvider implements RecognitionProvider {
     const signature = createHmac('sha1', this.accessSecret).update(stringToSign).digest('base64');
 
     const form = new FormData();
-    form.append('sample', new Blob([new Uint8Array(audio)], { type: mimeType }), 'recording.wav');
-    form.append('sample_bytes', String(audio.length));
+    form.append('sample', audio, 'recording.wav');
+    form.append('sample_bytes', String(audio.size));
     form.append('access_key', this.accessKey);
     form.append('data_type', dataType);
     form.append('signature_version', signatureVersion);

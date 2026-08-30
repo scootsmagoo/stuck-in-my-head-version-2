@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
-import { health, recognize } from './recognize.js';
+import { health, nodeRecognize } from './node-recognize.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -29,7 +29,8 @@ app.post('/api/recognize', async (req, res) => {
 
   try {
     const mime = req.headers['content-type'] || 'audio/wav';
-    res.json(await recognize(audio, mime, String(req.query.lyrics ?? '')));
+    const blob = new Blob([new Uint8Array(audio)], { type: mime });
+    res.json(await nodeRecognize(blob, String(req.query.lyrics ?? '')));
   } catch (err) {
     console.error('[server] recognition failed:', err);
     res.status(502).json({

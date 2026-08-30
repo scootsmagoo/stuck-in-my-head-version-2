@@ -33,5 +33,5 @@ export interface RecognitionProvider {
    * Returns candidates ordered by descending confidence; empty array if
    * nothing matched.
    */
-  recognizeHumming(audio: Buffer, mimeType: string): Promise<RecognitionMatch[]>;
+  recognizeHumming(audio: Blob): Promise<RecognitionMatch[]>;
 }

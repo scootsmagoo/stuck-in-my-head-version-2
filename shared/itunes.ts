@@ -1,4 +1,4 @@
-import { looksLikeCover, similarity } from '../lib/text.js';
+import { looksLikeCover, similarity } from './text.js';
 
 export interface TrackDetails {
   artist: string;

@@ -1,4 +1,4 @@
-import { lyricsMentionQuery, normalizeKey } from '../lib/text.js';
+import { lyricsMentionQuery, normalizeKey } from './text.js';
 import type { RecognitionMatch, RecognitionProvider } from './types.js';
 
 const AUDD_HUMMING_URL = 'https://api.audd.io/recognizeWithOffset/';
@@ -19,8 +19,8 @@ export class AuddProvider implements RecognitionProvider {
 
   constructor(private readonly apiToken: string) {}
 
-  async recognizeHumming(audio: Buffer, mimeType: string): Promise<RecognitionMatch[]> {
-    const data = await this.postFile<AuddHummingResponse>(AUDD_HUMMING_URL, audio, mimeType);
+  async recognizeHumming(audio: Blob): Promise<RecognitionMatch[]> {
+    const data = await this.postFile<AuddHummingResponse>(AUDD_HUMMING_URL, audio);
     if (data.status === 'error') throw auddError(data.error);
     return dedupe(data.result?.list ?? []).sort((a, b) => b.score - a.score);
   }
@@ -29,12 +29,12 @@ export class AuddProvider implements RecognitionProvider {
    * Shazam-style fingerprinting of the original recording (not humming).
    * Used as a fallback when the user captured a song playing nearby.
    */
-  async recognizeFingerprint(audio: Buffer, mimeType: string): Promise<RecognitionMatch[]> {
+  async recognizeFingerprint(audio: Blob): Promise<RecognitionMatch[]> {
     const data = await this.postFile<{
       status: 'success' | 'error';
       error?: { error_code: number; error_message: string };
       result?: { artist?: string; title?: string } | null;
-    }>(AUDD_RECOGNIZE_URL, audio, mimeType, { return: 'apple_music,spotify' });
+    }>(AUDD_RECOGNIZE_URL, audio, { return: 'apple_music,spotify' });
 
     if (data.status === 'error') throw auddError(data.error);
     const artist = data.result?.artist;
@@ -71,17 +71,12 @@ export class AuddProvider implements RecognitionProvider {
 
   private async postFile<T>(
     url: string,
-    audio: Buffer,
-    mimeType: string,
+    audio: Blob,
     extra: Record<string, string> = {},
   ): Promise<T> {
     const form = new FormData();
     form.append('api_token', this.apiToken);
-    form.append(
-      'file',
-      new Blob([new Uint8Array(audio)], { type: mimeType }),
-      `recording.${extensionFor(mimeType)}`,
-    );
+    form.append('file', audio, `recording.${extensionFor(audio.type)}`);
     for (const [k, v] of Object.entries(extra)) form.append(k, v);
 
     const res = await fetch(url, { method: 'POST', body: form });

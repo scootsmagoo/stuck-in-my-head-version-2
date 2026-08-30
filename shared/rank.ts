@@ -1,6 +1,6 @@
-import { canonicalizeTrack } from './enrich/itunes.js';
-import { looksLikeCover, normalizeKey, similarity } from './lib/text.js';
-import type { MatchSource, RankedMatch, RecognitionMatch } from './providers/types.js';
+import { canonicalizeTrack } from './itunes.js';
+import { looksLikeCover, normalizeKey, similarity } from './text.js';
+import type { MatchSource, RankedMatch, RecognitionMatch } from './types.js';
 
 const MAX_MATCHES = 5;
 const LYRICS_BASE = 72;

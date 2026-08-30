@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { recognize } from '../server/src/recognize.js';
+import { nodeRecognize } from '../server/src/node-recognize.js';
 import { readBody, sendJson } from './_http.js';
 
 export default async function handler(
@@ -20,7 +20,8 @@ export default async function handler(
 
     const url = new URL(req.url ?? '/', 'http://localhost');
     const mime = req.headers['content-type'] || 'audio/wav';
-    sendJson(res, 200, await recognize(audio, mime, url.searchParams.get('lyrics') ?? ''));
+    const blob = new Blob([new Uint8Array(audio)], { type: mime });
+    sendJson(res, 200, await nodeRecognize(blob, url.searchParams.get('lyrics') ?? ''));
   } catch (err) {
     console.error('[api] recognition failed:', err);
     sendJson(res, 502, {

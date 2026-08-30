@@ -1,19 +1,6 @@
-export type MatchSource = 'melody' | 'lyrics' | 'audio';
-
-export interface SongMatch {
-  score: number;
-  artist: string;
-  title: string;
-  album: string | null;
-  artworkUrl: string | null;
-  previewUrl: string | null;
-  storeUrl: string | null;
-  sources?: MatchSource[];
-  alternateArtists?: string[];
-}
-
-export interface RecognizeResponse {
-  matches?: SongMatch[];
-  heard?: string | null;
-  error?: string;
-}
+/**
+ * The UI renders exactly what the recognition pipeline produces. These were
+ * duplicated while the two halves talked over HTTP; now that the pipeline runs
+ * in the browser, re-export the shared definitions so they cannot drift.
+ */
+export type { MatchSource, RankedMatch as SongMatch } from '../../shared/types';

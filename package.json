@@ -2,14 +2,17 @@
   "name": "stuck-in-my-head",
   "version": "2.0.0",
   "private": true,
+  "type": "module",
   "description": "Hum or sing a melody and find out what song is stuck in your head.",
   "workspaces": [
     "client",
     "server"
   ],
   "scripts": {
-    "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w server && npm run build -w client",
+    "dev": "npm run dev -w client",
+    "dev:server": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "typecheck": "tsc -p server && tsc -p api",
     "start": "npm run start -w server"
   },
   "devDependencies": {
