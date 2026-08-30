@@ -16,7 +16,7 @@ const MIN_SECONDS = 8;
  */
 const AUDD_API_TOKEN = import.meta.env.VITE_AUDD_API_TOKEN as string | undefined;
 
-type Phase = 'capture' | 'processing' | 'results' | 'no-match' | 'error';
+type Phase = 'capture' | 'review' | 'processing' | 'results' | 'no-match' | 'error';
 
 function formatTime(s: number): string {
   return `0:${String(s).padStart(2, '0')}`;
@@ -27,34 +27,52 @@ export default function App() {
   const [matches, setMatches] = useState<SongMatch[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [melodySearched, setMelodySearched] = useState(false);
+  const [pending, setPending] = useState<Blob | null>(null);
+  const [words, setWords] = useState('');
 
-  const handleRecordingComplete = useCallback(async (blob: Blob, transcript: string) => {
-    setPhase('processing');
-    try {
-      const wav = await blobToWav(blob);
-      // Recognition runs entirely in the browser so the app can be served as
-      // static files; AudD and iTunes both allow cross-origin requests.
-      const result = await recognize(wav, transcript, { apiToken: AUDD_API_TOKEN });
-      const { matches } = result;
-      setMelodySearched(result.melodySearched);
-
-      if (matches.length === 0) {
-        setPhase('no-match');
-        return;
-      }
-      setMatches(matches);
-      setPhase('results');
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Something went wrong.');
-      setPhase('error');
-    }
+  /**
+   * Recording stops at a review step rather than searching immediately. The
+   * lyrics index is near-exact: "fanta sea" finds nothing where "fantasy"
+   * finds Bohemian Rhapsody at the top. The person who just sang it can fix
+   * that in a second, and on browsers without speech recognition this is the
+   * only way to supply words at all.
+   */
+  const handleRecordingComplete = useCallback((blob: Blob, transcript: string) => {
+    setPending(blob);
+    setWords(transcript);
+    setPhase('review');
   }, []);
+
+  const runSearch = useCallback(
+    async (blob: Blob | null, lyrics: string) => {
+      if (!blob) return;
+      setPhase('processing');
+      try {
+        const wav = await blobToWav(blob);
+        const result = await recognize(wav, lyrics, { apiToken: AUDD_API_TOKEN });
+        setMelodySearched(result.melodySearched);
+
+        if (result.matches.length === 0) {
+          setPhase('no-match');
+          return;
+        }
+        setMatches(result.matches);
+        setPhase('results');
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Something went wrong.');
+        setPhase('error');
+      }
+    },
+    [],
+  );
 
   const recorder = useRecorder({ maxSeconds: MAX_SECONDS, onComplete: handleRecordingComplete });
 
   const reset = () => {
     setMatches([]);
     setErrorMessage('');
+    setPending(null);
+    setWords('');
     setPhase('capture');
   };
 
@@ -146,6 +164,36 @@ export default function App() {
                 </p>
               </>
             )}
+          </section>
+        )}
+
+        {phase === 'review' && (
+          <section className="review">
+            <h2>Any words you caught?</h2>
+            <p className="hint">
+              {words
+                ? "This is what we heard — fix anything that looks off. Even one\u00a0correct word beats a whole garbled line."
+                : "We didn't pick up any words. Type whatever you remember, however\u00a0rough — a fragment is plenty."}
+            </p>
+            <textarea
+              className="lyrics-input"
+              value={words}
+              onChange={(e) => setWords(e.target.value)}
+              placeholder="e.g. is this the real life, is this just fantasy"
+              rows={3}
+              autoFocus
+            />
+            <div className="review-actions">
+              <button className="button-primary" onClick={() => runSearch(pending, words)}>
+                Search
+              </button>
+              <button className="button-secondary" onClick={() => runSearch(pending, '')}>
+                Skip words
+              </button>
+            </div>
+            <button className="link-button" onClick={reset}>
+              Record again
+            </button>
           </section>
         )}
 

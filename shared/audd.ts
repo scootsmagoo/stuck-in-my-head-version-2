@@ -1,5 +1,5 @@
-import { lyricsMentionQuery, normalizeKey } from './text.js';
-import type { RecognitionMatch } from './types.js';
+import { lyricsOverlap, normalizeKey } from './text.js';
+import type { LyricsHit, RecognitionMatch } from './types.js';
 
 /**
  * Both of AudD's recognition endpoints are acoustic fingerprinting: they match
@@ -37,8 +37,12 @@ export class AuddProvider {
     return dedupe(data.result?.list ?? []).sort((a, b) => b.score - a.score);
   }
 
-  /** Search AudD's lyrics index by a sung excerpt (or title/artist text). */
-  async findLyrics(query: string): Promise<RecognitionMatch[]> {
+  /**
+   * Search AudD's lyrics index by a sung excerpt. Returns each hit with how
+   * much of the query its lyrics actually contain, so ranking can weigh the
+   * evidence instead of trusting result order.
+   */
+  async findLyrics(query: string): Promise<LyricsHit[]> {
     const form = new FormData();
     form.append('api_token', this.apiToken);
     form.append('q', query);
@@ -53,14 +57,18 @@ export class AuddProvider {
     };
     if (data.status === 'error') throw auddError(data.error);
 
-    return dedupe(
-      (data.result ?? [])
-        .filter((r): r is { artist: string; title: string; lyrics?: string } =>
-          Boolean(r.artist && r.title),
-        )
-        .filter((r) => lyricsMentionQuery(query, r.title, r.lyrics))
-        .map((r) => ({ score: 0, artist: r.artist, title: r.title })),
-    );
+    const hits: LyricsHit[] = [];
+    const seen = new Set<string>();
+
+    (data.result ?? []).forEach((r, rank) => {
+      if (!r.artist || !r.title) return;
+      const key = `${normalizeKey(r.artist)}|${normalizeKey(r.title)}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      hits.push({ artist: r.artist, title: r.title, rank, overlap: lyricsOverlap(query, r.title, r.lyrics) });
+    });
+
+    return hits;
   }
 
   private async postFile<T>(

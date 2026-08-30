@@ -6,6 +6,16 @@ export interface RecognitionMatch {
   title: string;
 }
 
+/** A lyrics-index hit, carrying the evidence behind it. */
+export interface LyricsHit {
+  artist: string;
+  title: string;
+  /** Position in the provider's own result list, 0-based. */
+  rank: number;
+  /** Share of the sung words found in these lyrics, 0-1. */
+  overlap: number;
+}
+
 export type MatchSource = 'melody' | 'lyrics' | 'audio';
 
 export interface RankedMatch {

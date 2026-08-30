@@ -1,9 +1,19 @@
 import { canonicalizeTrack } from './itunes.js';
 import { looksLikeCover, normalizeKey, similarity } from './text.js';
-import type { MatchSource, RankedMatch, RecognitionMatch } from './types.js';
+import type { LyricsHit, MatchSource, RankedMatch, RecognitionMatch } from './types.js';
 
 const MAX_MATCHES = 5;
-const LYRICS_BASE = 72;
+/**
+ * Lyrics scoring. Most of the range is earned by how much of what was sung
+ * actually appears in the song; only a little comes from the provider's own
+ * ordering. Below MIN_OVERLAP there is no evidence at all and the hit is
+ * dropped — a deliberately low bar, because discarding the right song costs
+ * far more here than showing an extra wrong one.
+ */
+const LYRICS_MIN_SCORE = 28;
+const LYRICS_EVIDENCE_RANGE = 56;
+const LYRICS_RANK_BONUS = 6;
+const MIN_OVERLAP = 0.25;
 
 /**
  * Merge humming, lyrics, and fingerprint candidates: collapse covers of the
@@ -54,13 +64,19 @@ export async function rankAndEnrich(input: {
   return collapseCanonical(enriched);
 }
 
-export function lyricsToMatches(hits: RecognitionMatch[]): RecognitionMatch[] {
+export function lyricsToMatches(hits: LyricsHit[]): RecognitionMatch[] {
   return hits
-    .filter((h) => !looksLikeCover(h.artist, h.title))
+    .filter((h) => h.overlap >= MIN_OVERLAP && !looksLikeCover(h.artist, h.title))
+    .sort((a, b) => b.overlap - a.overlap)
     .slice(0, 5)
-    .map((h, i) => ({
-      ...h,
-      score: Math.max(40, LYRICS_BASE - i * 8),
+    .map((h) => ({
+      artist: h.artist,
+      title: h.title,
+      score: Math.round(
+        LYRICS_MIN_SCORE +
+          LYRICS_EVIDENCE_RANGE * h.overlap +
+          LYRICS_RANK_BONUS * Math.max(0, 1 - h.rank * 0.2),
+      ),
     }));
 }
 
