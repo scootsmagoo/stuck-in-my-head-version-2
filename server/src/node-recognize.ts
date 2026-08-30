@@ -9,7 +9,7 @@ import { AcrCloudProvider } from './providers/acrcloud.js';
  *
  * Env is read per call rather than at import time so dotenv has always run.
  */
-function config(): { apiToken?: string; extraProviders: RecognitionProvider[] } {
+function config(): { apiToken?: string; melodyProviders: RecognitionProvider[] } {
   const apiToken = process.env.AUDD_API_TOKEN?.trim();
 
   const host = process.env.ACRCLOUD_HOST?.trim();
@@ -17,16 +17,17 @@ function config(): { apiToken?: string; extraProviders: RecognitionProvider[] } 
   const secret = process.env.ACRCLOUD_ACCESS_SECRET?.trim();
   const acrcloud = host && key && secret ? new AcrCloudProvider(host, key, secret) : null;
 
-  return { apiToken, extraProviders: acrcloud ? [acrcloud] : [] };
+  return { apiToken, melodyProviders: acrcloud ? [acrcloud] : [] };
 }
 
 export function health() {
-  const { apiToken, extraProviders } = config();
+  const { apiToken, melodyProviders } = config();
   return {
     ok: true,
-    providers: ['audd', ...extraProviders.map((p) => p.name)],
+    fingerprint: 'audd',
+    lyrics: 'audd',
+    melody: melodyProviders.map((p) => p.name),
     hasToken: Boolean(apiToken),
-    lyrics: Boolean(apiToken),
   };
 }
 

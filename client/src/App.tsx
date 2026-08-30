@@ -26,6 +26,7 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>('capture');
   const [matches, setMatches] = useState<SongMatch[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
+  const [melodySearched, setMelodySearched] = useState(false);
 
   const handleRecordingComplete = useCallback(async (blob: Blob, transcript: string) => {
     setPhase('processing');
@@ -33,7 +34,9 @@ export default function App() {
       const wav = await blobToWav(blob);
       // Recognition runs entirely in the browser so the app can be served as
       // static files; AudD and iTunes both allow cross-origin requests.
-      const { matches } = await recognize(wav, transcript, { apiToken: AUDD_API_TOKEN });
+      const result = await recognize(wav, transcript, { apiToken: AUDD_API_TOKEN });
+      const { matches } = result;
+      setMelodySearched(result.melodySearched);
 
       if (matches.length === 0) {
         setPhase('no-match');
@@ -93,6 +96,25 @@ export default function App() {
                   <span className="record-status">
                     {recorder.state === 'paused' ? 'Paused' : 'Listening…'}
                   </span>
+
+                  <div
+                    className="level-meter"
+                    role="meter"
+                    aria-label="Microphone input level"
+                    aria-valuenow={Math.round(recorder.level * 100)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <div
+                      className={`level-fill ${recorder.level > 0.18 ? 'good' : 'low'}`}
+                      style={{ width: `${Math.round(recorder.level * 100)}%` }}
+                    />
+                  </div>
+                  <p className={`level-hint ${recorder.audible ? '' : 'warn'}`}>
+                    {recorder.audible
+                      ? 'Got you — keep going.'
+                      : 'Barely hearing you. Move closer, or mute other noise.'}
+                  </p>
                   {recorder.transcript && (
                     <p className="live-captions">“{recorder.transcript}”</p>
                   )}
@@ -139,11 +161,19 @@ export default function App() {
         {phase === 'no-match' && (
           <section className="message-screen">
             <h2>No match found</h2>
-            <p>
-              Try singing the chorus (words help), keep a steady rhythm, and record at
-              least 10 seconds. Humming a guitar riff usually won't match — the vocal
-              melody will.
-            </p>
+            {melodySearched ? (
+              <p>
+                Try again with a steadier rhythm — pitch matters less than timing.
+                Singing the chorus with any words you know helps most.
+              </p>
+            ) : (
+              <p>
+                Heads up: melody matching isn't switched on, so your tune itself
+                wasn't searched — only <strong>words you sang</strong> and whether a
+                recording was playing nearby. Singing actual lyrics, however
+                garbled, is what works right now.
+              </p>
+            )}
             <button className="button-secondary" onClick={reset}>
               Try again
             </button>

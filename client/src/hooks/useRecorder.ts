@@ -25,6 +25,10 @@ export function useRecorder({ maxSeconds, onComplete }: UseRecorderOptions) {
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState('');
+  /** Smoothed input loudness, 0–1, for the live meter. */
+  const [level, setLevel] = useState(0);
+  /** False while the loudest sound so far is barely above the noise floor. */
+  const [audible, setAudible] = useState(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -33,6 +37,9 @@ export function useRecorder({ maxSeconds, onComplete }: UseRecorderOptions) {
   const timerRef = useRef<number | null>(null);
   const stopCaptionsRef = useRef<(() => void) | null>(null);
   const transcriptRef = useRef('');
+  const meterCtxRef = useRef<AudioContext | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const levelRef = useRef(0);
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
@@ -44,6 +51,52 @@ export function useRecorder({ maxSeconds, onComplete }: UseRecorderOptions) {
   const stopCaptions = () => {
     stopCaptionsRef.current?.();
     stopCaptionsRef.current = null;
+  };
+
+  const stopMetering = () => {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    frameRef.current = null;
+    meterCtxRef.current?.close().catch(() => {});
+    meterCtxRef.current = null;
+    levelRef.current = 0;
+    setLevel(0);
+  };
+
+  /**
+   * Drive a live input meter off the same stream MediaRecorder is using. This
+   * is the only way a user can tell the microphone is actually picking them up
+   * before committing to a take — silent failure is the worst outcome here.
+   */
+  const startMetering = (stream: MediaStream) => {
+    stopMetering();
+    const ctx = new AudioContext();
+    meterCtxRef.current = ctx;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+
+    const samples = new Float32Array(analyser.fftSize);
+    const tick = () => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+      const rms = Math.sqrt(sum / samples.length);
+
+      // Map to a dB scale so a quiet hum is still visibly moving the meter;
+      // a linear bar would leave everything below -30 dBFS looking dead.
+      const db = 20 * Math.log10(rms + 1e-9);
+      const norm = Math.max(0, Math.min(1, (db + 60) / 60));
+
+      // Fast attack, slow release, so the bar tracks notes but doesn't flicker.
+      const prev = levelRef.current;
+      const next = norm > prev ? norm : prev * 0.85 + norm * 0.15;
+      levelRef.current = next;
+      setLevel(next);
+      if (norm > 0.18) setAudible(true);
+
+      frameRef.current = requestAnimationFrame(tick);
+    };
+    frameRef.current = requestAnimationFrame(tick);
   };
 
   const stop = useCallback(() => {
@@ -84,6 +137,7 @@ export function useRecorder({ maxSeconds, onComplete }: UseRecorderOptions) {
       transcriptRef.current = '';
       setSeconds(0);
       setTranscript('');
+      setAudible(false);
 
       const mimeType = pickMimeType();
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
@@ -95,6 +149,7 @@ export function useRecorder({ maxSeconds, onComplete }: UseRecorderOptions) {
       recorder.onstop = () => {
         clearTimer();
         stopCaptions();
+        stopMetering();
         stream.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         setState('idle');
@@ -106,6 +161,7 @@ export function useRecorder({ maxSeconds, onComplete }: UseRecorderOptions) {
       setState('recording');
       startTimer();
       startCaptions();
+      startMetering(stream);
     } catch (err) {
       setError(
         err instanceof DOMException && err.name === 'NotAllowedError'
@@ -122,6 +178,7 @@ export function useRecorder({ maxSeconds, onComplete }: UseRecorderOptions) {
       recorder.pause();
       clearTimer();
       stopCaptions();
+      stopMetering();
       setState('paused');
     }
   }, []);
@@ -133,6 +190,7 @@ export function useRecorder({ maxSeconds, onComplete }: UseRecorderOptions) {
       setState('recording');
       startTimer();
       startCaptions();
+      if (streamRef.current) startMetering(streamRef.current);
     }
   }, [startCaptions, startTimer]);
 
@@ -140,10 +198,11 @@ export function useRecorder({ maxSeconds, onComplete }: UseRecorderOptions) {
     () => () => {
       clearTimer();
       stopCaptions();
+      stopMetering();
       streamRef.current?.getTracks().forEach((t) => t.stop());
     },
     [],
   );
 
-  return { state, seconds, error, transcript, start, pause, resume, stop };
+  return { state, seconds, error, transcript, level, audible, start, pause, resume, stop };
 }

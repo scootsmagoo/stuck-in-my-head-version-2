@@ -483,3 +483,42 @@ body {
     align-items: center;
   }
 }
+
+/* Live microphone level -------------------------------------------------- */
+
+.level-meter {
+  width: min(260px, 70vw);
+  height: 8px;
+  margin: 1rem auto 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.level-fill {
+  height: 100%;
+  border-radius: 999px;
+  /* No CSS transition: the hook already smooths this, and easing on top of
+     that makes the meter lag behind the voice it is supposed to track. */
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+.level-fill.low {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.level-hint {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.level-hint.warn {
+  color: #fbbf24;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .level-fill {
+    transition: none;
+  }
+}

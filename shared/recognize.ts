@@ -11,17 +11,24 @@ export const ANONYMOUS_TOKEN = 'test';
 export interface RecognizeResult {
   matches: RankedMatch[];
   heard: string | null;
+  /**
+   * Whether a real melody engine took part. False means nothing in this run
+   * could match a hummed tune, so a miss says nothing about the humming — the
+   * UI should say so rather than implying the melody was searched and lost.
+   */
+  melodySearched: boolean;
 }
 
 export interface RecognizeOptions {
   /** AudD API token. Omit for anonymous access. */
   apiToken?: string;
   /**
-   * Additional humming engines. ACRCloud lives here rather than inline because
-   * it signs requests with Node's crypto and a secret, so it can only run on a
-   * server — the browser build gets AudD alone.
+   * Engines that match a hummed or sung melody. AudD is deliberately not one:
+   * both of its recognition endpoints are acoustic fingerprinting and cannot
+   * match humming at all. ACRCloud can, but signs requests with a secret and
+   * Node's crypto, so it is only available to server-side callers.
    */
-  extraProviders?: RecognitionProvider[];
+  melodyProviders?: RecognitionProvider[];
 }
 
 /**
@@ -38,28 +45,30 @@ export async function recognize(
   options: RecognizeOptions = {},
 ): Promise<RecognizeResult> {
   const audd = new AuddProvider(options.apiToken?.trim() || ANONYMOUS_TOKEN);
-  const providers: RecognitionProvider[] = [audd, ...(options.extraProviders ?? [])];
+  const melodyProviders = options.melodyProviders ?? [];
   const transcript = rawTranscript.trim().slice(0, MAX_TRANSCRIPT_CHARS);
 
-  const [hummingSettled, lyrics] = await Promise.all([
-    Promise.allSettled(providers.map((p) => p.recognizeHumming(audio))),
+  const [melodySettled, lyrics] = await Promise.all([
+    Promise.allSettled(melodyProviders.map((p) => p.recognizeHumming(audio))),
     searchLyrics(audd, transcript),
   ]);
+  const melody = collectMelody(melodySettled);
 
-  const humming = mergeHumming(hummingSettled);
+  // Fingerprinting only runs when nothing else found anything. It answers a
+  // different question — "is this song playing right now?" — and costs a
+  // request, which matters most on the keyless tier.
   let fingerprint: RecognitionMatch[] = [];
-
-  if (humming.length === 0 && lyrics.length === 0) {
+  if (melody.length === 0 && lyrics.length === 0) {
     try {
       fingerprint = await audd.recognizeFingerprint(audio);
     } catch (err) {
-      if (!isAuddFingerprintError(err)) throw err;
-      console.warn('[recognize] audio fingerprinting failed:', err);
+      if (!isFingerprintFailure(err)) throw err;
+      console.warn('[recognize] no fingerprint match:', err);
     }
   }
 
-  const matches = await rankAndEnrich({ humming, lyrics, fingerprint });
-  return { matches, heard: transcript || null };
+  const matches = await rankAndEnrich({ humming: melody, lyrics, fingerprint });
+  return { matches, heard: transcript || null, melodySearched: melodyProviders.length > 0 };
 }
 
 async function searchLyrics(audd: AuddProvider, transcript: string): Promise<RecognitionMatch[]> {
@@ -72,20 +81,19 @@ async function searchLyrics(audd: AuddProvider, transcript: string): Promise<Rec
   }
 }
 
-function mergeHumming(results: PromiseSettledResult<RecognitionMatch[]>[]): RecognitionMatch[] {
+function collectMelody(results: PromiseSettledResult<RecognitionMatch[]>[]): RecognitionMatch[] {
   const out: RecognitionMatch[] = [];
   for (const r of results) {
-    if (r.status === 'fulfilled') {
-      out.push(...r.value);
-    } else if (!isAuddFingerprintError(r.reason)) {
-      console.warn('[recognize] humming provider failed:', r.reason);
-    } else {
-      console.warn('[recognize] humming engine could not extract a melody');
-    }
+    if (r.status === 'fulfilled') out.push(...r.value);
+    else console.warn('[recognize] melody provider failed:', r.reason);
   }
   return out;
 }
 
-function isAuddFingerprintError(err: unknown): boolean {
+/**
+ * AudD #300 is a fingerprinting failure and #500 an unreadable file. Neither
+ * is an outage, so both mean "no match" rather than an error worth surfacing.
+ */
+function isFingerprintFailure(err: unknown): boolean {
   return err instanceof Error && /#300|#500/.test(err.message);
 }

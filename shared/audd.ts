@@ -1,11 +1,18 @@
 import { lyricsMentionQuery, normalizeKey } from './text.js';
-import type { RecognitionMatch, RecognitionProvider } from './types.js';
+import type { RecognitionMatch } from './types.js';
 
-const AUDD_HUMMING_URL = 'https://api.audd.io/recognizeWithOffset/';
-const AUDD_RECOGNIZE_URL = 'https://api.audd.io/';
+/**
+ * Both of AudD's recognition endpoints are acoustic fingerprinting: they match
+ * the spectral signature of one specific master recording. That is robust to
+ * room noise and compression, but it cannot match a hummed or sung melody,
+ * which shares no fingerprint with the original. recognizeWithOffset is used
+ * here because it returns ranked candidates rather than a single result;
+ * calling the plain endpoint as well would repeat the same work.
+ */
+const AUDD_FINGERPRINT_URL = 'https://api.audd.io/recognizeWithOffset/';
 const AUDD_LYRICS_URL = 'https://api.audd.io/findLyrics/';
 
-interface AuddHummingResponse {
+interface AuddFingerprintResponse {
   status: 'success' | 'error';
   error?: { error_code: number; error_message: string };
   result?: {
@@ -14,33 +21,20 @@ interface AuddHummingResponse {
   } | null;
 }
 
-export class AuddProvider implements RecognitionProvider {
+export class AuddProvider {
   readonly name = 'audd';
 
   constructor(private readonly apiToken: string) {}
 
-  async recognizeHumming(audio: Blob): Promise<RecognitionMatch[]> {
-    const data = await this.postFile<AuddHummingResponse>(AUDD_HUMMING_URL, audio);
-    if (data.status === 'error') throw auddError(data.error);
-    return dedupe(data.result?.list ?? []).sort((a, b) => b.score - a.score);
-  }
-
   /**
-   * Shazam-style fingerprinting of the original recording (not humming).
-   * Used as a fallback when the user captured a song playing nearby.
+   * Identify a recording of the actual song — music playing nearby, not a
+   * person humming it. Returns ranked candidates, or an empty array if nothing
+   * matched.
    */
   async recognizeFingerprint(audio: Blob): Promise<RecognitionMatch[]> {
-    const data = await this.postFile<{
-      status: 'success' | 'error';
-      error?: { error_code: number; error_message: string };
-      result?: { artist?: string; title?: string } | null;
-    }>(AUDD_RECOGNIZE_URL, audio, { return: 'apple_music,spotify' });
-
+    const data = await this.postFile<AuddFingerprintResponse>(AUDD_FINGERPRINT_URL, audio);
     if (data.status === 'error') throw auddError(data.error);
-    const artist = data.result?.artist;
-    const title = data.result?.title;
-    if (!artist || !title) return [];
-    return [{ score: 100, artist, title }];
+    return dedupe(data.result?.list ?? []).sort((a, b) => b.score - a.score);
   }
 
   /** Search AudD's lyrics index by a sung excerpt (or title/artist text). */
