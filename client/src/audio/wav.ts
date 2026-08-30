@@ -5,12 +5,20 @@ export class QuietRecordingError extends Error {
   }
 }
 
-/** Decode any MediaRecorder blob and re-encode as 16-bit mono WAV. */
+/**
+ * Recognition only needs the vocal melody, so downsample hard: 16 kHz mono is
+ * ample for both humming engines and keeps a 20-second clip around 640 KB,
+ * comfortably under serverless request-body limits.
+ */
+const TARGET_SAMPLE_RATE = 16000;
+
+/** Decode any MediaRecorder blob and re-encode as 16-bit 16 kHz mono WAV. */
 export async function blobToWav(blob: Blob): Promise<Blob> {
   const ctx = new AudioContext();
   try {
-    const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
-    const samples = mixToMono(audio);
+    const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const audio = await resampleToMono(decoded, TARGET_SAMPLE_RATE);
+    const samples = audio.getChannelData(0);
     if (rms(samples) < 0.008) {
       throw new QuietRecordingError();
     }
@@ -20,15 +28,18 @@ export async function blobToWav(blob: Blob): Promise<Blob> {
   }
 }
 
-function mixToMono(audio: AudioBuffer): Float32Array {
-  const channels = audio.numberOfChannels;
-  const length = audio.length;
-  const out = new Float32Array(length);
-  for (let c = 0; c < channels; c++) {
-    const data = audio.getChannelData(c);
-    for (let i = 0; i < length; i++) out[i] += data[i] / channels;
-  }
-  return out;
+/**
+ * Rendering through a single-channel OfflineAudioContext both downmixes to
+ * mono and resamples with proper anti-aliasing.
+ */
+async function resampleToMono(audio: AudioBuffer, sampleRate: number): Promise<AudioBuffer> {
+  const frames = Math.max(1, Math.ceil(audio.duration * sampleRate));
+  const offline = new OfflineAudioContext(1, frames, sampleRate);
+  const source = offline.createBufferSource();
+  source.buffer = audio;
+  source.connect(offline.destination);
+  source.start();
+  return offline.startRendering();
 }
 
 function rms(samples: Float32Array): number {

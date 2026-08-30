@@ -23,10 +23,12 @@ export default function App() {
     setPhase('processing');
     try {
       const wav = await blobToWav(blob);
-      const form = new FormData();
-      form.append('audio', wav, 'recording.wav');
-      if (transcript) form.append('lyrics', transcript);
-      const res = await fetch('/api/recognize', { method: 'POST', body: form });
+      const query = transcript ? `?lyrics=${encodeURIComponent(transcript)}` : '';
+      const res = await fetch(`/api/recognize${query}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'audio/wav' },
+        body: wav,
+      });
       const data = (await res.json()) as RecognizeResponse;
 
       if (!res.ok) {
